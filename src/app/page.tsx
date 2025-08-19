@@ -14,7 +14,7 @@ import {
   QrCode,
   FileSpreadsheet,
   Plus,
-  Cloud
+  HardDrive
 } from 'lucide-react';
 import { InventoryManager } from '@/components/InventoryManager';
 import { StudentManager } from '@/components/StudentManager';
@@ -29,11 +29,7 @@ export default function Dashboard() {
     data,
     loading,
     getStats,
-    syncStatus,
-    signInToGoogle,
-    signOutFromGoogle,
-    manualBackup,
-    manualRestore,
+    localStorageStatus,
     loadSampleData
   } = useInventoryWithSync();
 
@@ -59,27 +55,21 @@ export default function Dashboard() {
           <div className="flex items-center gap-3 mb-4">
             <Music className="h-8 w-8 text-slate-700" />
             <h1 className="text-3xl font-bold text-slate-900">Band Inventory System</h1>
-            {syncStatus.isSignedIn && (
-              <Badge variant="default" className="bg-green-100 text-green-800">
-                <Cloud className="h-3 w-3 mr-1" />
-                Cloud Sync
-              </Badge>
-            )}
+            <Badge variant="default" className="bg-slate-100 text-slate-800">
+              <HardDrive className="h-3 w-3 mr-1" />
+              Local Storage
+            </Badge>
           </div>
           <p className="text-slate-600">Manage instruments, track rentals, and monitor your band's inventory</p>
         </div>
 
-        {/* Cloud Sync Status + Stats Cards */}
+        {/* Local Storage Status + Stats Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-          {/* Cloud Sync Status or Sample Data Loader */}
+          {/* Local Storage Status or Sample Data Loader */}
           <div className="lg:col-span-2">
             {hasAnyData ? (
               <CloudSyncStatus
-                syncStatus={syncStatus}
-                onSignIn={signInToGoogle}
-                onSignOut={signOutFromGoogle}
-                onManualBackup={manualBackup}
-                onManualRestore={manualRestore}
+                localStorageStatus={localStorageStatus}
               />
             ) : (
               <SampleDataLoader
@@ -196,11 +186,7 @@ export default function Dashboard() {
             <TabsContent value="export" className="mt-6">
               <div className="space-y-6">
                 <CloudSyncStatus
-                  syncStatus={syncStatus}
-                  onSignIn={signInToGoogle}
-                  onSignOut={signOutFromGoogle}
-                  onManualBackup={manualBackup}
-                  onManualRestore={manualRestore}
+                  localStorageStatus={localStorageStatus}
                 />
                 <DataExport />
                 {hasAnyData && (
