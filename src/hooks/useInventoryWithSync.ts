@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { InventoryItem, Student, Rental, InventoryData, InventoryStats } from '@/types';
 
 const STORAGE_KEY = 'band-inventory-data';
-const LAST_SYNC_KEY = 'band-inventory-last-sync';
 
 // Generate unique ID
 const generateId = () => {
@@ -16,24 +15,10 @@ const generateBarcode = () => {
   return `BI${Date.now().toString().slice(-8)}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
 };
 
-// Lazy import Google Drive sync
-const getGoogleDriveSync = async () => {
-  if (typeof window === 'undefined') return null;
-  try {
-    const { googleDriveSync } = await import('@/services/googleDriveSync');
-    return googleDriveSync;
-  } catch (error) {
-    console.error('Failed to load Google Drive sync:', error);
-    return null;
-  }
-};
-
-interface SyncStatus {
-  isSignedIn: boolean;
-  isLoading: boolean;
-  lastSync?: Date;
-  error?: string;
-  userEmail?: string;
+interface LocalStorageStatus {
+  isLoaded: boolean;
+  lastSaved?: Date;
+  itemCount: number;
 }
 
 export const useInventoryWithSync = () => {
@@ -44,9 +29,9 @@ export const useInventoryWithSync = () => {
   });
 
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
-    isSignedIn: false,
-    isLoading: false
+  const [localStorageStatus, setLocalStorageStatus] = useState<LocalStorageStatus>({
+    isLoaded: false,
+    itemCount: 0
   });
 
   // Initialize and load data
@@ -57,35 +42,8 @@ export const useInventoryWithSync = () => {
       return;
     }
 
-    const initializeSync = async () => {
-      try {
-        // Load local data first
-        loadLocalData();
-
-        // Try to initialize Google Drive sync
-        const googleDriveSync = await getGoogleDriveSync();
-        if (googleDriveSync) {
-          await googleDriveSync.initialize();
-          const unsubscribe = googleDriveSync.subscribe(setSyncStatus);
-          return unsubscribe;
-        }
-      } catch (error) {
-        console.error('Error initializing sync:', error);
-        // Fallback to local data only
-        loadLocalData();
-      }
-    };
-
-    initializeSync();
+    loadLocalData();
   }, []);
-
-  // Auto-restore from cloud when signed in
-  useEffect(() => {
-    if (syncStatus.isSignedIn && !syncStatus.isLoading) {
-      checkAndRestoreFromCloud();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncStatus.isSignedIn, syncStatus.isLoading]);
 
   // Load data from localStorage
   const loadLocalData = () => {
@@ -95,135 +53,57 @@ export const useInventoryWithSync = () => {
         if (stored) {
           const parsedData = JSON.parse(stored);
           setData(parsedData);
+          setLocalStorageStatus({
+            isLoaded: true,
+            lastSaved: new Date(localStorage.getItem(STORAGE_KEY + '_timestamp') || Date.now()),
+            itemCount: parsedData.items?.length || 0
+          });
+        } else {
+          setLocalStorageStatus({
+            isLoaded: true,
+            itemCount: 0
+          });
         }
       }
     } catch (error) {
       console.error('Error loading local data:', error);
+      setLocalStorageStatus({
+        isLoaded: true,
+        itemCount: 0
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  // Check if cloud data is newer and restore if needed
-  const checkAndRestoreFromCloud = async () => {
-    try {
-      const googleDriveSync = await getGoogleDriveSync();
-      if (!googleDriveSync) return;
-
-      const cloudData = await googleDriveSync.restoreData();
-      if (cloudData) {
-        const lastLocalSync = localStorage.getItem(LAST_SYNC_KEY);
-        const localSyncTime = lastLocalSync ? new Date(lastLocalSync) : new Date(0);
-        const cloudSyncTime = syncStatus.lastSync || new Date();
-
-        // If cloud data is newer, use it
-        if (cloudSyncTime > localSyncTime) {
-          setData(cloudData);
-          saveToLocal(cloudData);
-          localStorage.setItem(LAST_SYNC_KEY, cloudSyncTime.toISOString());
-        }
-      }
-    } catch (error) {
-      console.error('Error checking cloud data:', error);
-    }
-  };
-
-  // Save data to localStorage and cloud
+  // Save data to localStorage
   const saveData = useCallback(async (newData: InventoryData) => {
     try {
-      // Save locally first (immediate feedback)
+      // Save locally
       saveToLocal(newData);
       setData(newData);
 
-      // Save to cloud if signed in
-      if (syncStatus.isSignedIn) {
-        const googleDriveSync = await getGoogleDriveSync();
-        if (googleDriveSync) {
-          const success = await googleDriveSync.backupData(newData);
-          if (success && typeof window !== 'undefined') {
-            localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-          }
-        }
-      }
+      // Update status
+      setLocalStorageStatus({
+        isLoaded: true,
+        lastSaved: new Date(),
+        itemCount: newData.items?.length || 0
+      });
     } catch (error) {
       console.error('Error saving data:', error);
     }
-  }, [syncStatus.isSignedIn]);
+  }, []);
 
   // Save to localStorage only
   const saveToLocal = (data: InventoryData) => {
     try {
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem(STORAGE_KEY + '_timestamp', new Date().toISOString());
       }
     } catch (error) {
       console.error('Error saving to local storage:', error);
     }
-  };
-
-  // Manual sync functions
-  const signInToGoogle = async () => {
-    try {
-      const googleDriveSync = await getGoogleDriveSync();
-      if (googleDriveSync) {
-        await googleDriveSync.signIn();
-      }
-    } catch (error) {
-      console.error('Error signing in:', error);
-    }
-  };
-
-  const signOutFromGoogle = async () => {
-    try {
-      const googleDriveSync = await getGoogleDriveSync();
-      if (googleDriveSync) {
-        await googleDriveSync.signOut();
-      }
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  };
-
-  const manualBackup = async () => {
-    if (syncStatus.isSignedIn) {
-      try {
-        const googleDriveSync = await getGoogleDriveSync();
-        if (googleDriveSync) {
-          const success = await googleDriveSync.backupData(data);
-          if (success && typeof window !== 'undefined') {
-            localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-          }
-          return success;
-        }
-      } catch (error) {
-        console.error('Error during manual backup:', error);
-      }
-    }
-    return false;
-  };
-
-  const manualRestore = async () => {
-    if (syncStatus.isSignedIn) {
-      try {
-        const googleDriveSync = await getGoogleDriveSync();
-        if (googleDriveSync) {
-          const cloudData = await googleDriveSync.restoreData();
-          if (cloudData) {
-            setData(cloudData);
-            saveToLocal(cloudData);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-            }
-            return true;
-          }
-        }
-        return false;
-      } catch (error) {
-        console.error('Error during manual restore:', error);
-        return false;
-      }
-    }
-    return false;
   };
 
   // Inventory Items
@@ -406,7 +286,7 @@ export const useInventoryWithSync = () => {
   return {
     data,
     loading,
-    syncStatus,
+    localStorageStatus,
     // Items
     addItem,
     updateItem,
@@ -423,10 +303,5 @@ export const useInventoryWithSync = () => {
     getStats,
     clearAllData,
     loadSampleData,
-    // Cloud sync
-    signInToGoogle,
-    signOutFromGoogle,
-    manualBackup,
-    manualRestore,
   };
 };
