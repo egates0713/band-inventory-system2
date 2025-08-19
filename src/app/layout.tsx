@@ -31,10 +31,6 @@ export default function RootLayout({
           crossOrigin="anonymous"
           src="//unpkg.com/same-runtime/dist/index.global.js"
         />
-        <Script
-          src="https://apis.google.com/js/api.js"
-          strategy="beforeInteractive"
-        />
       </head>
       <body suppressHydrationWarning className="antialiased">
         <ClientBody>{children}</ClientBody>
